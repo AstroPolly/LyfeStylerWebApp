@@ -3,8 +3,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, DateTime, Text, Float
 from models import User, ScheduleEvent
-from schemas import UserCreate, UserOut, EventCreate, EventOut, EventUpdate, VerifyCode, Token
-#                                                         ↑ добавлено EventUpdate
+from schemas import UserCreate, UserOut, EventCreate, EventOut, VerifyCode  # ← добавлено VerifyCode
 from auth import (
     get_password_hash,
     create_access_token,

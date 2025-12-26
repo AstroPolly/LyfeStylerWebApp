@@ -1,5 +1,3 @@
-// В самом верху, после импортов React:
-import { api } from '../api';
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, X, Clock, Calendar, Bell, Type, Palette, Repeat, Tag, Plus, User, LogOut, Mail, Lock, Eye, EyeOff, UserPlus, Settings, Home } from 'lucide-react';
 
@@ -41,8 +39,6 @@ interface User {
 }
 
 const ScheduleApp = () => {
-  const [eventLoading, setEventLoading] = useState(false);
-  const [eventError, setEventError] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -50,32 +46,6 @@ const ScheduleApp = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<User>({ email: '', name: '' });
   const [showPassword, setShowPassword] = useState(false);
-
-  // Добавь в компонент, после объявления state:
-const [events, setEvents] = useState<any[]>([]);
-const [eventsLoading, setEventsLoading] = useState(false);
-
-const loadEventsForDate = async (date: Date) => {
-  const token = api.getToken();
-  if (!token || !isAuthenticated) return;
-
-  setEventsLoading(true);
-  try {
-    const dateStr = date.toISOString().split('T')[0]; // "2025-06-10"
-    const data = await api.getEvents(token, dateStr);
-    setEvents(data);
-  } catch (err: any) {
-    console.error('Ошибка загрузки событий:', err);
-    // Можно показать toast или скрытую ошибку — пока лог в консоль
-  } finally {
-    setEventsLoading(false);
-  }
-};
-
-// Загружать события при смене selectedDate
-useEffect(() => {
-  loadEventsForDate(selectedDate);
-}, [selectedDate, isAuthenticated]);
   
   // State for event form
   const [eventData, setEventData] = useState<EventData>({
@@ -141,22 +111,14 @@ useEffect(() => {
   // Названия дней недели
   const weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
-useEffect(() => {
-  const initAuth = async () => {
-    const token = api.getToken();
-    if (token) {
-      try {
-        const userData = await api.me(token);
-        setUser({ email: userData.email, name: userData.email.split('@')[0] });
-        setIsAuthenticated(true);
-      } catch {
-        api.clearToken();
-        setIsAuthenticated(false);
-      }
+  useEffect(() => {
+    // Check if user is authenticated (in real app, check localStorage or session)
+    const savedUser = localStorage.getItem('scheduleUser');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+      setIsAuthenticated(true);
     }
-  };
-  initAuth();
-}, []);
+  }, []);
 
   // Переключение месяца назад
   const prevMonth = () => {
@@ -273,40 +235,11 @@ useEffect(() => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setEventLoading(true);
-  setEventError(null);
-
-  const token = api.getToken();
-  if (!token) {
-    setEventError('Вы не авторизованы');
-    setEventLoading(false);
-    return;
-  }
-
-  try {
-    const dateStr = selectedDate.toISOString().split('T')[0]; // "2025-06-10"
-
-    const payload = {
-      title: eventData.title,
-      startTime: eventData.startTime,
-      endTime: eventData.endTime,
-      date: dateStr,
-      isRange: eventData.isRange,
-      isRecurring: eventData.isRecurring,
-      recurrenceDays: eventData.recurrenceDays,
-      reminder: eventData.reminder,
-      reminderMinutes: eventData.reminderMinutes,
-      color: eventData.color,
-      description: eventData.description || null,
-      tags: eventData.tags
-    };
-
-    await api.createEvent(token, payload);
-
-    // ✅ Успех — закрываем модалку и сбрасываем форму
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log('Event created:', { ...eventData, date: selectedDate });
     setIsModalOpen(false);
+    // Reset form
     setEventData({
       title: '',
       startTime: '09:00',
@@ -320,71 +253,74 @@ useEffect(() => {
       description: '',
       tags: []
     });
-
-  } catch (err: any) {
-    console.error('Ошибка создания события:', err);
-    setEventError(err.message || 'Не удалось сохранить событие');
-  } finally {
-    setEventLoading(false);
-  }
-};
+  };
 
   const handleRegister = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setLoading(true);
-  setError('');
-  try {
-    // 1. Регистрация
-    await api.register(registerData.email, registerData.password);
+    e.preventDefault();
+    setLoading(true);
+    setError('');
     
-    // 2. Верификация (временно — вручную)
-    alert(`Код подтверждения отправлен на ${registerData.email}. Посмотри в терминал бэка.`);
-    const code = prompt('Введите 6-значный код из консоли бэка:');
-    if (!code) throw new Error('Отмена');
-
-    await api.verify(registerData.email, code);
-
-    // 3. Логин
-    const { access_token } = await api.login(registerData.email, registerData.password);
-    api.setToken(access_token);
-
-    // 4. Загружаем профиль
-    const userData = await api.me(access_token);
-    setUser({ email: userData.email, name: userData.email.split('@')[0] });
-    setIsAuthenticated(true);
-    localStorage.setItem('scheduleUser', JSON.stringify({ email: userData.email, name: userData.email.split('@')[0] }));
-
-    // 5. Редирект
-    setRegisterData({ name: '', email: '', password: '', confirmPassword: '' });
-    setCurrentPage('home');
-  } catch (err: any) {
-    setError(err.message || 'Ошибка при регистрации');
-  } finally {
-    setLoading(false);
-  }
-};
+    // Basic validation
+    if (registerData.password !== registerData.confirmPassword) {
+      setError('Пароли не совпадают');
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      // This would be an API call to your backend in a real app
+      // For demo purposes, we'll simulate a successful registration
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Save user data (in real app, this would come from the backend after successful registration)
+      const newUser = {
+        name: registerData.name,
+        email: registerData.email
+      };
+      
+      setUser(newUser);
+      setIsAuthenticated(true);
+      localStorage.setItem('scheduleUser', JSON.stringify(newUser));
+      
+      // Reset form and go to home page
+      setRegisterData({ name: '', email: '', password: '', confirmPassword: '' });
+      setCurrentPage('home');
+    } catch (err) {
+      setError('Ошибка при регистрации. Попробуйте еще раз.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setLoading(true);
-  setError('');
-  try {
-    const { access_token } = await api.login(loginData.email, loginData.password);
-    api.setToken(access_token);
-
-    const userData = await api.me(access_token);
-    setUser({ email: userData.email, name: userData.email.split('@')[0] });
-    setIsAuthenticated(true);
-    localStorage.setItem('scheduleUser', JSON.stringify({ email: userData.email, name: userData.email.split('@')[0] }));
-
-    setLoginData({ email: '', password: '' });
-    setCurrentPage('home');
-  } catch (err: any) {
-    setError(err.message || 'Неверный email или пароль');
-  } finally {
-    setLoading(false);
-  }
-};
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    
+    try {
+      // This would be an API call to your backend in a real app
+      // For demo purposes, we'll simulate a successful login
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // In a real app, you would get user data from the backend
+      const mockUser = {
+        name: loginData.email.split('@')[0],
+        email: loginData.email
+      };
+      
+      setUser(mockUser);
+      setIsAuthenticated(true);
+      localStorage.setItem('scheduleUser', JSON.stringify(mockUser));
+      
+      // Reset form and go to home page
+      setLoginData({ email: '', password: '' });
+      setCurrentPage('home');
+    } catch (err) {
+      setError('Неверный email или пароль');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     // Clear user data
@@ -845,54 +781,58 @@ useEffect(() => {
               </div>
 
               {/* Schedule Items */}
-              {eventsLoading ? (
-  <div className="text-center py-4 text-gray-500">Загрузка...</div>
-) : events.length > 0 ? (
-  events.map((ev) => (
-    <div
-      key={ev.id}
-      className="border-l-4 pl-4 py-2"
-      style={{ borderColor: ev.color || '#3B82F6' }}
-    >
-      <div className="flex justify-between items-start">
-        <div>
-          <h3 className="font-semibold text-gray-800">{ev.title}</h3>
-          <p className="text-gray-600 text-sm">
-            {ev.startTime} {ev.isRange ? `– ${ev.endTime}` : ''}
-          </p>
-          {ev.completed && (
-            <p className="text-green-600 text-xs mt-1">✅ Выполнено за {ev.duration_seconds}s</p>
-          )}
-        </div>
-        <div className="flex gap-1 flex-wrap">
-          {ev.tags?.map((tagId: number) => {
-            const tag = availableTags.find(t => t.id === tagId);
-            return tag ? (
-              <span
-                key={tag.id}
-                className="text-xs px-2 py-1 rounded-full text-white"
-                style={{ backgroundColor: tag.color }}
-              >
-                {tag.name}
-              </span>
-            ) : null;
-          })}
-        </div>
-      </div>
-      {ev.description && (
-        <p className="text-gray-500 text-sm mt-1 ml-1">{ev.description}</p>
-      )}
-    </div>
-  ))
-) : (
-  <div className="mt-8 text-center text-gray-500">
-    <p>Нет запланированных событий</p>
-  </div>
-)}
+              <div className="space-y-4">
+                <div className="border-l-4 border-blue-500 pl-4 py-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-semibold text-gray-800">Математика</h3>
+                      <p className="text-gray-600 text-sm">09:00 - 10:30</p>
+                    </div>
+                    <div className="flex gap-1">
+                      <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                        Лекция
+                      </span>
+                      <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded-full">
+                        Учеба
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-                
+                <div className="border-l-4 border-green-500 pl-4 py-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-semibold text-gray-800">Физика</h3>
+                      <p className="text-gray-600 text-sm">11:00 - 12:30</p>
+                    </div>
+                    <div className="flex gap-1">
+                      <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                        Практика
+                      </span>
+                      <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded-full">
+                        Учеба
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-                
+                <div className="border-l-4 border-purple-500 pl-4 py-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-semibold text-gray-800">Информатика</h3>
+                      <p className="text-gray-600 text-sm">14:00 - 15:30</p>
+                    </div>
+                    <div className="flex gap-1">
+                      <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full">
+                        Лабораторная
+                      </span>
+                      <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded-full">
+                        Учеба
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               {/* Empty State */}
               <div className="mt-8 text-center text-gray-500">
@@ -1221,19 +1161,13 @@ useEffect(() => {
 
                 {/* Submit Button */}
                 <div className="pt-4">
-  {eventError && (
-    <div className="mb-3 p-2 bg-red-50 text-red-600 text-sm rounded text-center">
-      {eventError}
-    </div>
-  )}
-  <button
-    type="submit"
-    disabled={eventLoading}
-    className="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:bg-blue-600 transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-  >
-    {eventLoading ? 'Сохранение...' : 'Создать событие'}
-  </button>
-</div>
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:bg-blue-600 transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                  >
+                    Создать событие
+                  </button>
+                </div>
               </form>
             </div>
           </div>
